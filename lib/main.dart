@@ -1,78 +1,59 @@
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
+import 'package:timezone/data/latest.dart' as tz; // Dados de fuso horário
+import 'package:timezone/timezone.dart' as tz_core;
+import 'data/services/notification_service.dart';
+import 'data/services/isar_service.dart';
+import 'ui/dashboard/widgets/dashboard_screen.dart';
 
-void main() {
-  runApp(const MyApp());
+final getIt = GetIt.instance;
+
+Future<void> setupDependencies() async {
+  // Registra o Serviço de Notificações (Singleton = única instância pro app)
+  getIt.registerSingleton<NotificationService>(NotificationService());
+
+  // Registra o Isar (Banco de Dados)
+  getIt.registerSingleton<IsarService>(IsarService());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+void main() async {
+  // 2. Garante que a engine do Flutter está pronta
+  WidgetsFlutterBinding.ensureInitialized();
 
-  // This widget is the root of your application.
+  // 3. Inicializa os dados de Fuso Horário
+  tz.initializeTimeZones();
+  // Define o local padrão
+  // tz_core.setLocalLocation(tz_core.getLocation('America/Sao_Paulo'));
+
+  // 4. Inicializa seus serviços e banco de dados
+  await setupDependencies();
+
+  // Inicializa o plugin de notificações especificamente
+  await getIt<NotificationService>().init();
+
+  runApp(const RetailFlowApp());
+}
+
+class RetailFlowApp extends StatelessWidget {
+  const RetailFlowApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(colorScheme: .fromSeed(seedColor: Colors.deepPurple)),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-      ),
-      body: Center(
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+      title: 'RetailFlow',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.teal,
+          brightness: Brightness.light,
+        ),
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
+          filled: true,
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+      home: const DashboardScreen(),
     );
   }
 }
