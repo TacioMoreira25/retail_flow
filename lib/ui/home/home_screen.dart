@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../boletos/widgets/boletos_list_screen.dart';
 import '../dashboard/widgets/dashboard_screen.dart';
+import '../notas/widgets/notas_screen.dart';
 import '../vendas/widgets/vendas_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,9 +17,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // Lista das telas
   final List<Widget> _screens = [
     const DashboardScreen(),
-    const Center(child: Text("Tela de Boletos (Em breve)")), // 1: Boletos
+    const BoletosListScreen(),
     const VendasScreen(),
-    const Center(child: Text("Tela de Notas (Em breve)")), // 3: Notas
+    const NotasScreen(),
   ];
 
   @override

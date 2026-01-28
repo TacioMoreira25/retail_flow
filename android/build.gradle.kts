@@ -39,3 +39,29 @@ subprojects {
         }
     }
 }
+
+subprojects {
+    // Esta lógica verifica se chegamos "cedo" ou "tarde" e age de acordo
+    val action = {
+        val android = extensions.findByName("android")
+        if (android != null) {
+            // Força a versão 36 usando reflexão para funcionar em qualquer plugin
+            try {
+                val method = android.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType)
+                method.invoke(android, 36)
+            } catch (e: Exception) {
+                // Se der erro na reflexão, tenta pela propriedade compileSdk (plano B)
+                try {
+                    val property = android.javaClass.getMethod("setCompileSdk", Int::class.javaPrimitiveType)
+                    property.invoke(android, 36)
+                } catch (ignored: Exception) {}
+            }
+        }
+    }
+
+    if (state.executed) {
+        action()
+    } else {
+        afterEvaluate { action() }
+    }
+}

@@ -38,4 +38,33 @@ class BoletoRepository {
   Future<List<BoletoIsarModel>> buscarTodos() async {
     return await _isarService.getAllBoletos();
   }
+
+  Future<void> atualizarBoleto(int id, Boleto boletoAtualizado) async {
+    // 1. Busca o antigo no banco
+    final isar = await _isarService.db;
+    final boletoAntigo = await isar.boletoIsarModels.get(id);
+
+    if (boletoAntigo != null) {
+      // 2. Atualiza os campos
+      boletoAntigo
+        ..fornecedor = boletoAtualizado.fornecedor
+        ..valor = boletoAtualizado.valor
+        ..vencimento = boletoAtualizado.vencimento
+        ..fotoPath = boletoAtualizado.imagePath;
+      // Nota: Não mudamos o isPago na edição, só no botão de pagar
+
+      // 3. Salva no banco
+      await _isarService.updateBoleto(boletoAntigo);
+
+      // 4. Reagenda o alarme (se não estiver pago)
+      if (!boletoAntigo.isPago) {
+        await _notificationService.cancelBoletoAlert(id); // Cancela o velho
+        await _notificationService.scheduleBoletoAlert(
+          id,
+          boletoAntigo.fornecedor!,
+          boletoAntigo.vencimento!,
+        ); // Agenda o novo
+      }
+    }
+  }
 }

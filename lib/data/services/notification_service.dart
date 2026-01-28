@@ -1,4 +1,4 @@
-import 'dart:io'; // Para checar se é Android
+import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -13,14 +13,12 @@ class NotificationService {
     );
     await _notifications.initialize(settings);
 
-    //Pedir permissão de alarme exato no Android
     if (Platform.isAndroid) {
       final androidImplementation = _notifications
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
           >();
 
-      // Isso solicita ao usuário a permissão se ela não existir
       await androidImplementation?.requestExactAlarmsPermission();
     }
   }
@@ -34,7 +32,6 @@ class NotificationService {
     final scheduledDate = DateTime(data.year, data.month, data.day, 12, 0);
 
     if (scheduledDate.isBefore(DateTime.now())) {
-      // Se a data já passou, não agenda o alarme ou agenda para daqui a 1 minuto
       return;
     }
 
@@ -53,8 +50,7 @@ class NotificationService {
       ),
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
-      androidScheduleMode:
-          AndroidScheduleMode.exactAllowWhileIdle, // O causador do erro
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
     );
   }
 

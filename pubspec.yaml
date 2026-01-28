@@ -19,6 +19,8 @@ dependencies:
   intl: ^0.19.0
   cupertino_icons: ^1.0.8
   google_fonts: ^8.0.0
+  image_picker: ^1.0.7
+  brasil_fields: ^1.15.0
 
 dev_dependencies:
   flutter_test:

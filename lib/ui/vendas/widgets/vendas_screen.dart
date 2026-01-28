@@ -3,6 +3,8 @@ import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 import '../../../data/model/venda_isar_model.dart';
 import '../../../data/services/isar_service.dart';
+import 'package:flutter/services.dart';
+import 'package:brasil_fields/brasil_fields.dart';
 
 class VendasScreen extends StatefulWidget {
   const VendasScreen({super.key});
@@ -16,108 +18,156 @@ class _VendasScreenState extends State<VendasScreen> {
   final _descController = TextEditingController();
   final _isarService = GetIt.I<IsarService>();
 
+  // 0 = Dia, 1 = Mês, 2 = Ano
+  int _filtroIndex = 0;
+
   @override
   Widget build(BuildContext context) {
+    // Calcula as datas com base no filtro selecionado
+    final agora = DateTime.now();
+    DateTime inicio, fim;
+
+    if (_filtroIndex == 0) {
+      // DIA
+      inicio = DateTime(agora.year, agora.month, agora.day);
+      fim = DateTime(agora.year, agora.month, agora.day, 23, 59, 59);
+    } else if (_filtroIndex == 1) {
+      // MÊS
+      inicio = DateTime(agora.year, agora.month, 1);
+      fim = DateTime(
+        agora.year,
+        agora.month + 1,
+        0,
+        23,
+        59,
+        59,
+      ); // Dia 0 do prox mês = ultimo desse
+    } else {
+      // ANO
+      inicio = DateTime(agora.year, 1, 1);
+      fim = DateTime(agora.year, 12, 31, 23, 59, 59);
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Registrar Venda")),
+      appBar: AppBar(title: const Text("Caixa (Entradas)")),
       body: Column(
         children: [
-          // --- ÁREA DE CADASTRO RÁPIDO ---
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.white,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Input de Valor (Bem grande)
-                TextField(
-                  controller: _valorController,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: "Valor (R\$)",
-                    prefixText: "R\$ ",
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Input de Descrição (Opcional)
-                TextField(
-                  controller: _descController,
-                  decoration: const InputDecoration(
-                    labelText: "Descrição (Ex: Vestido longo)",
-                    prefixIcon: Icon(Icons.label_outline),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Botão Gigante
-                FilledButton.icon(
-                  onPressed: _registrarVenda,
-                  icon: const Icon(Icons.attach_money),
-                  label: const Text("REGISTRAR ENTRADA"),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.green[700], // Verde dinheiro
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ],
+          // --- 1. ÁREA DE CADASTRO RÁPIDO ---
+          ExpansionTile(
+            title: const Text(
+              "Nova Venda Rápida",
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
+            initiallyExpanded: false,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.white,
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _valorController,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        CentavosInputFormatter(moeda: true),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: "Valor",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _descController,
+                      decoration: const InputDecoration(
+                        labelText: "Descrição (Opcional)",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _registrarVenda,
+                        icon: const Icon(Icons.attach_money),
+                        label: const Text("REGISTRAR"),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
           const Divider(height: 1),
 
-          // --- LISTA DE VENDAS DE HOJE ---
+          // --- 2. FILTROS (DIA / MÊS / ANO) ---
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 0, label: Text("Hoje")),
+                ButtonSegment(value: 1, label: Text("Este Mês")),
+                ButtonSegment(value: 2, label: Text("Este Ano")),
+              ],
+              selected: {_filtroIndex},
+              onSelectionChanged: (Set<int> newSelection) {
+                setState(() => _filtroIndex = newSelection.first);
+              },
+              showSelectedIcon: false,
+            ),
+          ),
+
+          // --- 3. LISTA E TOTAL ---
           Expanded(
             child: StreamBuilder<List<VendaIsarModel>>(
-              stream: _isarService.listenToVendasDoDia(),
+              stream: _isarService.listenToVendasPorPeriodo(inicio, fim),
               builder: (context, snapshot) {
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.shopping_bag_outlined,
-                          size: 60,
-                          color: Colors.grey[300],
-                        ),
-                        const SizedBox(height: 10),
-                        const Text("Nenhuma venda hoje ainda."),
-                      ],
-                    ),
+                  return const Center(
+                    child: Text("Nenhuma venda neste período."),
                   );
                 }
 
                 final vendas = snapshot.data!;
-                // Calcula o total do dia na hora
-                final totalDia = vendas.fold(
+                final totalPeriodo = vendas.fold(
                   0.0,
                   (sum, item) => sum + item.valor,
                 );
 
                 return Column(
                   children: [
-                    // Cabeçalho da Lista com Total
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
+                    // Cabeçalho de Total
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      color: Colors.green[50],
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            "Histórico de Hoje",
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                          Text(
+                            _getTextoTotal(),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            "Total: ${NumberFormat.simpleCurrency(locale: 'pt_BR').format(totalDia)}",
+                            NumberFormat.simpleCurrency(
+                              locale: 'pt_BR',
+                            ).format(totalPeriodo),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.green,
-                              fontSize: 16,
+                              fontSize: 18,
                             ),
                           ),
                         ],
@@ -131,11 +181,13 @@ class _VendasScreenState extends State<VendasScreen> {
                         itemBuilder: (context, index) {
                           final venda = vendas[index];
                           return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: Colors.green[100],
-                              child: const Icon(
+                            leading: const CircleAvatar(
+                              backgroundColor: Colors.green,
+                              radius: 15,
+                              child: Icon(
                                 Icons.check,
-                                color: Colors.green,
+                                size: 16,
+                                color: Colors.white,
                               ),
                             ),
                             title: Text(
@@ -144,7 +196,7 @@ class _VendasScreenState extends State<VendasScreen> {
                                   : venda.descricao!,
                             ),
                             subtitle: Text(
-                              DateFormat('HH:mm').format(venda.data),
+                              DateFormat('dd/MM - HH:mm').format(venda.data),
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -161,6 +213,7 @@ class _VendasScreenState extends State<VendasScreen> {
                                   icon: const Icon(
                                     Icons.delete_outline,
                                     color: Colors.red,
+                                    size: 20,
                                   ),
                                   onPressed: () =>
                                       _isarService.deleteVenda(venda.id),
@@ -181,21 +234,32 @@ class _VendasScreenState extends State<VendasScreen> {
     );
   }
 
+  String _getTextoTotal() {
+    switch (_filtroIndex) {
+      case 0:
+        return "Total de Hoje:";
+      case 1:
+        return "Total do Mês:";
+      case 2:
+        return "Total do Ano:";
+      default:
+        return "Total:";
+    }
+  }
+
   void _registrarVenda() {
-    final valorTexto = _valorController.text.replaceAll(',', '.');
-    final valor = double.tryParse(valorTexto);
+    // CONVERSÃO INTELIGENTE:
+    final valor = UtilBrasilFields.converterMoedaParaDouble(
+      _valorController.text,
+    );
 
-    if (valor != null && valor > 0) {
+    if (valor > 0) {
       _isarService.addVenda(valor, _descController.text);
-
-      // Limpa os campos e foca no valor de novo para a próxima venda rápida
       _valorController.clear();
       _descController.clear();
-
-      // Feedback rápido
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Venda registrada! 💰"),
+          content: Text("Venda registrada!"),
           duration: Duration(milliseconds: 800),
         ),
       );

@@ -1,9 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:get_it/get_it.dart';
 import '../../../data/model/boleto_isar_model.dart';
-import '../../../data/services/isar_service.dart';
-import '../../../data/services/notification_service.dart';
+import 'boleto_detalhes_screen.dart';
 
 class BoletoCard extends StatelessWidget {
   final BoletoIsarModel boleto;
@@ -12,103 +11,112 @@ class BoletoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formatador = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    // Formatadores
+    final formatador = NumberFormat.simpleCurrency(locale: 'pt_BR');
     final dataFormatada = DateFormat('dd/MM/yyyy').format(boleto.vencimento!);
 
-    // Cores dinâmicas
+    // Define a cor baseada no status (Verde = Pago, Laranja = Pendente)
     final corStatus = boleto.isPago ? Colors.green : Colors.orange[800];
-    final iconeStatus = boleto.isPago
-        ? Icons.check_circle
-        : Icons.warning_amber_rounded;
 
     return Card(
-      elevation: 2, // Sombra leve
+      elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.symmetric(
-        horizontal: 4,
+        horizontal: 0,
         vertical: 6,
-      ), // Espaçamento lateral
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12), // Mais espaço interno
-        // --- AQUI ESTÁ A MÁGICA DO CLIQUE ---
-        leading: InkWell(
-          onTap: () => _alternarStatusPagamento(context),
-          borderRadius: BorderRadius.circular(50),
-          child: CircleAvatar(
-            backgroundColor: corStatus?.withOpacity(0.2), // Fundo clarinho
-            radius: 24,
-            child: Icon(iconeStatus, color: corStatus, size: 28),
-          ),
-        ),
-
-        title: Text(
-          boleto.fornecedor ?? "Sem nome",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            // Risco no texto se estiver pago (efeito visual bacana)
-            decoration: boleto.isPago ? TextDecoration.lineThrough : null,
-            color: boleto.isPago ? Colors.grey : Colors.black87,
-          ),
-        ),
-
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            boleto.isPago ? "PAGO" : "Vence em: $dataFormatada",
-            style: TextStyle(
-              color: boleto.isPago ? Colors.green : Colors.grey[600],
-              fontWeight: FontWeight.w500,
+      ), // Margem ajustada para listas
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BoletoDetalhesScreen(boletoInicial: boleto),
             ),
-          ),
-        ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // --- 1. MINIATURA DA FOTO OU ÍCONE ---
+              Hero(
+                tag: 'foto_${boleto.id}',
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: corStatus?.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                    // Se tiver foto, mostra ela. Se não, mostra null.
+                    image: boleto.fotoPath != null
+                        ? DecorationImage(
+                            image: FileImage(File(boleto.fotoPath!)),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  // Se NÃO tiver foto, mostra o ícone no centro
+                  child: boleto.fotoPath == null
+                      ? Icon(
+                          boleto.isPago
+                              ? Icons.check_circle
+                              : Icons.priority_high,
+                          color: corStatus,
+                          size: 30,
+                        )
+                      : null,
+                ),
+              ),
 
-        trailing: Text(
-          formatador.format(boleto.valor),
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            color: boleto.isPago ? Colors.grey : Colors.blueGrey[900],
+              const SizedBox(width: 16),
+
+              // --- 2. INFORMAÇÕES DE TEXTO ---
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      boleto.fornecedor ?? "Fornecedor Sem Nome",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        // Risca o texto se estiver pago
+                        decoration: boleto.isPago
+                            ? TextDecoration.lineThrough
+                            : null,
+                        color: boleto.isPago ? Colors.grey : Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      boleto.isPago ? "PAGO" : "Vence em: $dataFormatada",
+                      style: TextStyle(
+                        color: boleto.isPago ? Colors.green : Colors.grey[600],
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // --- 3. VALOR ---
+              Text(
+                formatador.format(boleto.valor),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: boleto.isPago ? Colors.grey : Colors.blueGrey[900],
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
-  }
-
-  void _alternarStatusPagamento(BuildContext context) async {
-    final isarService = GetIt.I<IsarService>();
-    final notificationService = GetIt.I<NotificationService>();
-
-    // 1. Inverte o status
-    boleto.isPago = !boleto.isPago;
-
-    // 2. Salva no banco (Isar entende que se tem ID, é uma atualização)
-    await isarService.saveBoleto(boleto);
-
-    // 3. Gerencia o Alarme
-    if (boleto.isPago) {
-      await notificationService.cancelBoletoAlert(boleto.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Conta paga! Alarme cancelado."),
-          duration: Duration(seconds: 1),
-        ),
-      );
-    } else {
-      // Se desmarcou, agenda de novo (se for futuro)
-      if (boleto.vencimento!.isAfter(DateTime.now())) {
-        await notificationService.scheduleBoletoAlert(
-          boleto.id,
-          boleto.fornecedor,
-          boleto.vencimento!,
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Boleto reativado. Alarme agendado."),
-            duration: Duration(seconds: 1),
-          ),
-        );
-      }
-    }
   }
 }
