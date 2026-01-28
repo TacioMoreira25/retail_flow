@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
+import 'package:brasil_fields/brasil_fields.dart';
+import 'package:flutter/services.dart';
 import '../../../data/model/venda_isar_model.dart';
 import '../../../data/services/isar_service.dart';
-import 'package:flutter/services.dart';
-import 'package:brasil_fields/brasil_fields.dart';
 
 class VendasScreen extends StatefulWidget {
   const VendasScreen({super.key});
@@ -18,47 +18,76 @@ class _VendasScreenState extends State<VendasScreen> {
   final _descController = TextEditingController();
   final _isarService = GetIt.I<IsarService>();
 
-  // 0 = Dia, 1 = Mês, 2 = Ano
+  // 0 = Hoje, 1 = Mês Atual, 2 = Ano, 3 = Mês Específico (Personalizado)
   int _filtroIndex = 0;
+  DateTime _mesPersonalizado =
+      DateTime.now(); // Guarda o mês que o usuário escolheu
 
   @override
   Widget build(BuildContext context) {
-    // Calcula as datas com base no filtro selecionado
+    // --- LÓGICA DE DATAS ---
     final agora = DateTime.now();
     DateTime inicio, fim;
 
     if (_filtroIndex == 0) {
-      // DIA
+      // HOJE
       inicio = DateTime(agora.year, agora.month, agora.day);
       fim = DateTime(agora.year, agora.month, agora.day, 23, 59, 59);
     } else if (_filtroIndex == 1) {
-      // MÊS
+      // ESTE MÊS
       inicio = DateTime(agora.year, agora.month, 1);
+      fim = DateTime(agora.year, agora.month + 1, 0, 23, 59, 59);
+    } else if (_filtroIndex == 2) {
+      // ESTE ANO
+      inicio = DateTime(agora.year, 1, 1);
+      fim = DateTime(agora.year, 12, 31, 23, 59, 59);
+    } else {
+      // MÊS PERSONALIZADO (Index 3)
+      inicio = DateTime(_mesPersonalizado.year, _mesPersonalizado.month, 1);
       fim = DateTime(
-        agora.year,
-        agora.month + 1,
+        _mesPersonalizado.year,
+        _mesPersonalizado.month + 1,
         0,
         23,
         59,
         59,
-      ); // Dia 0 do prox mês = ultimo desse
-    } else {
-      // ANO
-      inicio = DateTime(agora.year, 1, 1);
-      fim = DateTime(agora.year, 12, 31, 23, 59, 59);
+      );
     }
 
+    // Texto para o cabeçalho
+    String tituloTotal = "Total:";
+    if (_filtroIndex == 0)
+      tituloTotal = "Hoje:";
+    else if (_filtroIndex == 1)
+      tituloTotal = "Neste Mês:";
+    else if (_filtroIndex == 2)
+      tituloTotal = "Neste Ano:";
+    else
+      tituloTotal = DateFormat(
+        'MMMM/yy',
+        'pt_BR',
+      ).format(_mesPersonalizado).toUpperCase(); // Ex: JANEIRO/25
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Caixa (Entradas)")),
+      appBar: AppBar(
+        title: const Text("Caixa (Vendas)"),
+        actions: [
+          // BOTÃO DE CALENDÁRIO
+          IconButton(
+            tooltip: "Escolher outro mês",
+            icon: const Icon(Icons.calendar_month),
+            onPressed: _abrirSeletorDeMes,
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          // --- 1. ÁREA DE CADASTRO RÁPIDO ---
+          // --- 1. CADASTRO RÁPIDO ---
           ExpansionTile(
             title: const Text(
-              "Nova Venda Rápida",
+              "Nova Venda",
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            initiallyExpanded: false,
             children: [
               Container(
                 padding: const EdgeInsets.all(16),
@@ -78,7 +107,7 @@ class _VendasScreenState extends State<VendasScreen> {
                         CentavosInputFormatter(moeda: true),
                       ],
                       decoration: const InputDecoration(
-                        labelText: "Valor",
+                        labelText: "Valor da Venda",
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -86,17 +115,18 @@ class _VendasScreenState extends State<VendasScreen> {
                     TextField(
                       controller: _descController,
                       decoration: const InputDecoration(
-                        labelText: "Descrição (Opcional)",
+                        labelText: "Descrição (Ex: Vestido)",
                         border: OutlineInputBorder(),
                       ),
+                      textCapitalization: TextCapitalization.sentences,
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
                         onPressed: _registrarVenda,
-                        icon: const Icon(Icons.attach_money),
-                        label: const Text("REGISTRAR"),
+                        icon: const Icon(Icons.check),
+                        label: const Text("LANÇAR VENDA"),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.green[700],
                         ),
@@ -110,20 +140,41 @@ class _VendasScreenState extends State<VendasScreen> {
 
           const Divider(height: 1),
 
-          // --- 2. FILTROS (DIA / MÊS / ANO) ---
+          // --- 2. FILTROS (TEXTO MAIS CURTO PARA NÃO CORTAR) ---
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 0, label: Text("Hoje")),
-                ButtonSegment(value: 1, label: Text("Este Mês")),
-                ButtonSegment(value: 2, label: Text("Este Ano")),
-              ],
-              selected: {_filtroIndex},
-              onSelectionChanged: (Set<int> newSelection) {
-                setState(() => _filtroIndex = newSelection.first);
-              },
-              showSelectedIcon: false,
+            child: SingleChildScrollView(
+              // Garante que não quebre em telas muito pequenas
+              scrollDirection: Axis.horizontal,
+              child: SegmentedButton<int>(
+                segments: [
+                  const ButtonSegment(value: 0, label: Text("Hoje")),
+                  const ButtonSegment(
+                    value: 1,
+                    label: Text("Mês"),
+                  ), // Texto encurtado
+                  const ButtonSegment(
+                    value: 2,
+                    label: Text("Ano"),
+                  ), // Texto encurtado
+                  // O botão "Outro" aparece quando selecionamos pelo calendário
+                  if (_filtroIndex == 3)
+                    const ButtonSegment(
+                      value: 3,
+                      label: Text("Outro"),
+                      icon: Icon(Icons.filter_alt),
+                    ),
+                ],
+                selected: {_filtroIndex},
+                onSelectionChanged: (Set<int> newSelection) {
+                  setState(() => _filtroIndex = newSelection.first);
+                },
+                showSelectedIcon: false,
+                style: ButtonStyle(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             ),
           ),
 
@@ -133,8 +184,21 @@ class _VendasScreenState extends State<VendasScreen> {
               stream: _isarService.listenToVendasPorPeriodo(inicio, fim),
               builder: (context, snapshot) {
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(
-                    child: Text("Nenhuma venda neste período."),
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.sell_outlined,
+                          size: 60,
+                          color: Colors.grey[300],
+                        ),
+                        Text(
+                          "Sem vendas neste período",
+                          style: TextStyle(color: Colors.grey[500]),
+                        ),
+                      ],
+                    ),
                   );
                 }
 
@@ -146,19 +210,22 @@ class _VendasScreenState extends State<VendasScreen> {
 
                 return Column(
                   children: [
-                    // Cabeçalho de Total
+                    // BARRA DE TOTAL
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 10,
+                        vertical: 12,
                       ),
                       color: Colors.green[50],
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            _getTextoTotal(),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            tituloTotal,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           Text(
                             NumberFormat.simpleCurrency(
@@ -167,13 +234,13 @@ class _VendasScreenState extends State<VendasScreen> {
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.green,
-                              fontSize: 18,
+                              fontSize: 20,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    // Lista
+                    // LISTAGEM
                     Expanded(
                       child: ListView.separated(
                         itemCount: vendas.length,
@@ -181,13 +248,11 @@ class _VendasScreenState extends State<VendasScreen> {
                         itemBuilder: (context, index) {
                           final venda = vendas[index];
                           return ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: Colors.green,
-                              radius: 15,
-                              child: Icon(
-                                Icons.check,
-                                size: 16,
-                                color: Colors.white,
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.green[100],
+                              child: const Icon(
+                                Icons.attach_money,
+                                color: Colors.green,
                               ),
                             ),
                             title: Text(
@@ -234,35 +299,37 @@ class _VendasScreenState extends State<VendasScreen> {
     );
   }
 
-  String _getTextoTotal() {
-    switch (_filtroIndex) {
-      case 0:
-        return "Total de Hoje:";
-      case 1:
-        return "Total do Mês:";
-      case 2:
-        return "Total do Ano:";
-      default:
-        return "Total:";
+  // Função para abrir calendário e escolher mês
+  Future<void> _abrirSeletorDeMes() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _filtroIndex == 3 ? _mesPersonalizado : DateTime.now(),
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2030),
+      helpText: "ESCOLHA UM DIA DO MÊS DESEJADO",
+    );
+
+    if (picked != null) {
+      setState(() {
+        _mesPersonalizado = picked; // Guarda a data
+        _filtroIndex = 3; // Muda a aba para "Outro" (Personalizado)
+      });
     }
   }
 
   void _registrarVenda() {
-    // CONVERSÃO INTELIGENTE:
     final valor = UtilBrasilFields.converterMoedaParaDouble(
       _valorController.text,
     );
-
     if (valor > 0) {
       _isarService.addVenda(valor, _descController.text);
       _valorController.clear();
       _descController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Venda registrada!"),
-          duration: Duration(milliseconds: 800),
-        ),
-      );
+      // Fecha o teclado
+      FocusScope.of(context).unfocus();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Venda registrada!")));
     }
   }
 }
