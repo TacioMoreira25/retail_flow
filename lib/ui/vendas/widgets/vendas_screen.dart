@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 import 'package:brasil_fields/brasil_fields.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import '../../../data/model/venda_isar_model.dart';
 import '../../../data/services/isar_service.dart';
 
@@ -18,17 +19,32 @@ class _VendasScreenState extends State<VendasScreen> {
   final _descController = TextEditingController();
   final _isarService = GetIt.I<IsarService>();
 
-  // 0 = Hoje, 1 = Mês Atual, 2 = Ano, 3 = Mês Específico (Personalizado)
+  // 0 = Hoje, 1 = Mês, 2 = Ano, 3 = Período Personalizado
   int _filtroIndex = 0;
-  DateTime _mesPersonalizado =
-      DateTime.now(); // Guarda o mês que o usuário escolheu
+
+  // Agora usamos um DateTimeRange para guardar início e fim
+  DateTimeRange? _periodoPersonalizado;
+
+  bool _localePronto = false;
+
+  @override
+  void initState() {
+    super.initState();
+    initializeDateFormatting('pt_BR', null).then((_) {
+      if (mounted) setState(() => _localePronto = true);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    // --- LÓGICA DE DATAS ---
+    if (!_localePronto) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     final agora = DateTime.now();
     DateTime inicio, fim;
 
+    // --- LÓGICA DE DATAS ---
     if (_filtroIndex == 0) {
       // HOJE
       inicio = DateTime(agora.year, agora.month, agora.day);
@@ -42,19 +58,19 @@ class _VendasScreenState extends State<VendasScreen> {
       inicio = DateTime(agora.year, 1, 1);
       fim = DateTime(agora.year, 12, 31, 23, 59, 59);
     } else {
-      // MÊS PERSONALIZADO (Index 3)
-      inicio = DateTime(_mesPersonalizado.year, _mesPersonalizado.month, 1);
-      fim = DateTime(
-        _mesPersonalizado.year,
-        _mesPersonalizado.month + 1,
-        0,
-        23,
-        59,
-        59,
-      );
+      // PERÍODO PERSONALIZADO (Index 3)
+      // Se não tiver escolhido nada ainda, usa hoje como padrão
+      inicio =
+          _periodoPersonalizado?.start ??
+          DateTime(agora.year, agora.month, agora.day);
+      // O fim do range vem como 00:00, então ajustamos para 23:59:59
+      final fimRange =
+          _periodoPersonalizado?.end ??
+          DateTime(agora.year, agora.month, agora.day);
+      fim = DateTime(fimRange.year, fimRange.month, fimRange.day, 23, 59, 59);
     }
 
-    // Texto para o cabeçalho
+    // --- TÍTULO DO CABEÇALHO ---
     String tituloTotal = "Total:";
     if (_filtroIndex == 0)
       tituloTotal = "Hoje:";
@@ -62,21 +78,21 @@ class _VendasScreenState extends State<VendasScreen> {
       tituloTotal = "Neste Mês:";
     else if (_filtroIndex == 2)
       tituloTotal = "Neste Ano:";
-    else
-      tituloTotal = DateFormat(
-        'MMMM/yy',
-        'pt_BR',
-      ).format(_mesPersonalizado).toUpperCase(); // Ex: JANEIRO/25
+    else {
+      // Ex: 01/02 até 15/02
+      final f = DateFormat('dd/MM');
+      tituloTotal = "${f.format(inicio)} até ${f.format(fim)}";
+    }
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Caixa (Vendas)"),
         actions: [
-          // BOTÃO DE CALENDÁRIO
+          // ÍCONE MUDOU PARA DATE RANGE
           IconButton(
-            tooltip: "Escolher outro mês",
-            icon: const Icon(Icons.calendar_month),
-            onPressed: _abrirSeletorDeMes,
+            tooltip: "Escolher período",
+            icon: const Icon(Icons.date_range), // Ícone mais apropriado
+            onPressed: _abrirSeletorDePeriodo, // <--- Nova função
           ),
         ],
       ),
@@ -140,28 +156,21 @@ class _VendasScreenState extends State<VendasScreen> {
 
           const Divider(height: 1),
 
-          // --- 2. FILTROS (TEXTO MAIS CURTO PARA NÃO CORTAR) ---
+          // --- 2. FILTROS ---
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: SingleChildScrollView(
-              // Garante que não quebre em telas muito pequenas
               scrollDirection: Axis.horizontal,
               child: SegmentedButton<int>(
                 segments: [
                   const ButtonSegment(value: 0, label: Text("Hoje")),
-                  const ButtonSegment(
-                    value: 1,
-                    label: Text("Mês"),
-                  ), // Texto encurtado
-                  const ButtonSegment(
-                    value: 2,
-                    label: Text("Ano"),
-                  ), // Texto encurtado
-                  // O botão "Outro" aparece quando selecionamos pelo calendário
+                  const ButtonSegment(value: 1, label: Text("Mês")),
+                  const ButtonSegment(value: 2, label: Text("Ano")),
+                  // Botão "Período" aparece quando selecionado
                   if (_filtroIndex == 3)
                     const ButtonSegment(
                       value: 3,
-                      label: Text("Outro"),
+                      label: Text("Período"),
                       icon: Icon(Icons.filter_alt),
                     ),
                 ],
@@ -170,7 +179,7 @@ class _VendasScreenState extends State<VendasScreen> {
                   setState(() => _filtroIndex = newSelection.first);
                 },
                 showSelectedIcon: false,
-                style: ButtonStyle(
+                style: const ButtonStyle(
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                 ),
@@ -183,26 +192,40 @@ class _VendasScreenState extends State<VendasScreen> {
             child: StreamBuilder<List<VendaIsarModel>>(
               stream: _isarService.listenToVendasPorPeriodo(inicio, fim),
               builder: (context, snapshot) {
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final vendas = snapshot.data ?? [];
+
+                if (vendas.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.sell_outlined,
-                          size: 60,
+                          Icons.date_range_outlined,
+                          size: 80,
                           color: Colors.grey[300],
                         ),
+                        const SizedBox(height: 16),
                         Text(
-                          "Sem vendas neste período",
-                          style: TextStyle(color: Colors.grey[500]),
+                          "Sem vendas no período",
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 16,
+                          ),
                         ),
+                        if (_filtroIndex == 3)
+                          TextButton(
+                            onPressed: _abrirSeletorDePeriodo,
+                            child: const Text("Mudar Datas"),
+                          ),
                       ],
                     ),
                   );
                 }
 
-                final vendas = snapshot.data!;
                 final totalPeriodo = vendas.fold(
                   0.0,
                   (sum, item) => sum + item.valor,
@@ -299,20 +322,32 @@ class _VendasScreenState extends State<VendasScreen> {
     );
   }
 
-  // Função para abrir calendário e escolher mês
-  Future<void> _abrirSeletorDeMes() async {
-    final picked = await showDatePicker(
+  Future<void> _abrirSeletorDePeriodo() async {
+    final pickedRange = await showDateRangePicker(
       context: context,
-      initialDate: _filtroIndex == 3 ? _mesPersonalizado : DateTime.now(),
       firstDate: DateTime(2024),
       lastDate: DateTime(2030),
-      helpText: "ESCOLHA UM DIA DO MÊS DESEJADO",
+      initialDateRange: _periodoPersonalizado,
+      locale: const Locale('pt', 'BR'),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFFB71C1C),
+              primary: const Color(0xFFB71C1C),
+            ),
+          ),
+          child: child!,
+        );
+      },
+      helpText: "SELECIONE O INÍCIO E O FIM",
+      saveText: "FILTRAR",
     );
 
-    if (picked != null) {
+    if (pickedRange != null) {
       setState(() {
-        _mesPersonalizado = picked; // Guarda a data
-        _filtroIndex = 3; // Muda a aba para "Outro" (Personalizado)
+        _periodoPersonalizado = pickedRange;
+        _filtroIndex = 3;
       });
     }
   }
@@ -325,7 +360,6 @@ class _VendasScreenState extends State<VendasScreen> {
       _isarService.addVenda(valor, _descController.text);
       _valorController.clear();
       _descController.clear();
-      // Fecha o teclado
       FocusScope.of(context).unfocus();
       ScaffoldMessenger.of(
         context,
